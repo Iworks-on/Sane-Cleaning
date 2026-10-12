@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: audio
+    description: Audio cleaning and job lifecycle
 paths:
   /healthz:
     get:
@@ -24,6 +26,156 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /audio/engine:
+    get:
+      operationId: getAudioEngine
+      tags: [audio]
+      summary: Check audio processing readiness
+      responses:
+        "200":
+          description: Engine availability and configured limits
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AudioEngineStatus"
+  /audio/jobs:
+    post:
+      operationId: createAudioJob
+      tags: [audio]
+      summary: Upload audio and start a cleaning job
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/AudioJobInput"
+      responses:
+        "202":
+          description: Job accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AudioJob"
+        "400":
+          description: Unsupported, invalid, or unreadable audio
+        "413":
+          description: Upload exceeds the configured size limit
+        "503":
+          description: Audio processing engine is unavailable
+  /audio/jobs/{jobId}:
+    get:
+      operationId: getAudioJob
+      tags: [audio]
+      summary: Get current processing status
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job status and processing measurements
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AudioJob"
+        "404":
+          description: Job not found or expired
+    delete:
+      operationId: deleteAudioJob
+      tags: [audio]
+      summary: Delete a job and its temporary audio files
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Job and temporary files deleted
+        "404":
+          description: Job not found
+  /audio/jobs/{jobId}/original:
+    get:
+      operationId: getAudioJobOriginal
+      tags: [audio]
+      summary: Stream the original upload for playback
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Original WAV or MP3 audio
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Job not found or expired
+  /audio/jobs/{jobId}/cleaned:
+    get:
+      operationId: getAudioJobCleaned
+      tags: [audio]
+      summary: Stream the cleaned audio for playback
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cleaned WAV or MP3 audio
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Job not found or expired
+        "409":
+          description: Processing is not complete
+  /audio/jobs/{jobId}/cleaned/download:
+    get:
+      operationId: downloadAudioJob
+      tags: [audio]
+      summary: Download the cleaned audio as an attachment
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cleaned WAV or MP3 audio download
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Job not found or expired
+        "409":
+          description: Processing is not complete
 components:
   schemas:
     HealthStatus:
@@ -33,4 +185,61 @@ components:
           type: string
       required:
         - status
+    AudioEngineStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ready, unavailable]
+        message:
+          type: string
+        noiseReduction:
+          type: string
+        loudnessNormalization:
+          type: string
+        maxUploadBytes:
+          type: integer
+        maxDurationSeconds:
+          type: integer
+      required: [status, message, noiseReduction, loudnessNormalization, maxUploadBytes, maxDurationSeconds]
+    AudioJobInput:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+        outputFormat:
+          type: string
+          enum: [wav, mp3]
+      required: [file, outputFormat]
+    AudioJob:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [queued, decoding, denoising, normalizing, encoding, completed, failed]
+        message:
+          type: string
+        originalName:
+          type: string
+        originalFormat:
+          type: string
+        outputFormat:
+          type: string
+        durationSeconds:
+          type: ["number", "null"]
+        inputLufs:
+          type: ["number", "null"]
+        outputLufs:
+          type: ["number", "null"]
+        outputPeakDbfs:
+          type: ["number", "null"]
+        error:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, status, message, originalName, originalFormat, outputFormat, durationSeconds, inputLufs, outputLufs, outputPeakDbfs, error, createdAt]
 

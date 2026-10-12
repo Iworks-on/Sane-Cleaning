@@ -1,0 +1,15 @@
+[project]
+name = "repl-nix-workspace"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "dfnstream-py==0.2.1",
+    "fastapi>=0.143.0",
+    "numpy>=2.2.6",
+    "pyloudnorm>=0.2.0",
+    "python-multipart>=0.0.32",
+    "scipy>=1.18.1",
+    "soundfile>=0.14.0",
+    "uvicorn[standard]>=0.54.0",
+]

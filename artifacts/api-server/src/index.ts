@@ -1,4 +1,5 @@
 import app from "./app";
+import { startAudioService } from "./lib/audioService";
 import { logger } from "./lib/logger";
 
 const rawPort = process.env["PORT"];
@@ -13,6 +14,12 @@ const port = Number(rawPort);
 
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
+}
+
+const audioService = startAudioService();
+const audioServiceReady = await audioService.ready;
+if (audioServiceReady) {
+  logger.info("Audio processing service is ready");
 }
 
 app.listen(port, (err) => {

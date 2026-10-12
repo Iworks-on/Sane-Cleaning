@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "AI Audio Cleaner"
+description = "A practical audio-cleaning tool for spoken-word recordings. Upload WAV or MP3, reduce steady background noise with real speech enhancement, normalize safely to -16 LUFS, compare the result, and download the cleaned recording."
+version = "1.0.0"
+id = "artifacts/audio-cleaner"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19549
+
+[services.development]
+run = "pnpm --filter @workspace/audio-cleaner run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/audio-cleaner", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/audio-cleaner/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19549"
+BASE_PATH = "/"
