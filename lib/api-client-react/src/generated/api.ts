@@ -223,6 +223,21 @@ export const createAudioJob = async (audioJobInput: AudioJobInput, options?: Par
     const formData = new FormData();
 formData.append(`file`, audioJobInput.file);
 formData.append(`outputFormat`, audioJobInput.outputFormat);
+if(audioJobInput.noiseReduction !== undefined) {
+ formData.append(`noiseReduction`, audioJobInput.noiseReduction);
+ }
+if(audioJobInput.leveling !== undefined) {
+ formData.append(`leveling`, audioJobInput.leveling);
+ }
+if(audioJobInput.loudnessTarget !== undefined) {
+ formData.append(`loudnessTarget`, audioJobInput.loudnessTarget);
+ }
+if(audioJobInput.humRemoval !== undefined) {
+ formData.append(`humRemoval`, audioJobInput.humRemoval);
+ }
+if(audioJobInput.rumbleFilter !== undefined) {
+ formData.append(`rumbleFilter`, audioJobInput.rumbleFilter.toString())
+ }
 
   return customFetch<AudioJob>(getCreateAudioJobUrl(),
   {

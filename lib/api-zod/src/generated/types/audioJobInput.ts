@@ -5,9 +5,23 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AudioJobInputHumRemoval } from './audioJobInputHumRemoval';
+import type { AudioJobInputLeveling } from './audioJobInputLeveling';
+import type { AudioJobInputLoudnessTarget } from './audioJobInputLoudnessTarget';
+import type { AudioJobInputNoiseReduction } from './audioJobInputNoiseReduction';
 import type { AudioJobInputOutputFormat } from './audioJobInputOutputFormat';
 
 export interface AudioJobInput {
   file: Blob;
   outputFormat: AudioJobInputOutputFormat;
+  /** How aggressively fan, air-conditioning and room noise is removed. */
+  noiseReduction?: AudioJobInputNoiseReduction;
+  /** Evens out quiet and loud speakers before the volume is raised. */
+  leveling?: AudioJobInputLeveling;
+  /** Final listening level (standard -16 LUFS, louder -14 LUFS, softer -19 LUFS). */
+  loudnessTarget?: AudioJobInputLoudnessTarget;
+  /** Removes electrical hum at 50 Hz or 60 Hz and its harmonics. */
+  humRemoval?: AudioJobInputHumRemoval;
+  /** Removes low rumble below 80 Hz (fans, HVAC, stage thumps). */
+  rumbleFilter?: boolean;
 }

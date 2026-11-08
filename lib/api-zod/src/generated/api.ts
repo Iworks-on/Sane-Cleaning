@@ -26,7 +26,8 @@ export const GetAudioEngineResponse = zod.object({
   "noiseReduction": zod.string(),
   "loudnessNormalization": zod.string(),
   "maxUploadBytes": zod.number().int(),
-  "maxDurationSeconds": zod.number().int()
+  "maxDurationSeconds": zod.number().int(),
+  "acceptedExtensions": zod.array(zod.string())
 })
 
 
@@ -35,16 +36,31 @@ export const GetAudioEngineResponse = zod.object({
  */
 export const CreateAudioJobBody = zod.object({
   "file": zod.instanceof(Blob),
-  "outputFormat": zod.enum(['wav', 'mp3'])
+  "outputFormat": zod.enum(['wav', 'mp3']),
+  "noiseReduction": zod.enum(['light', 'standard', 'strong']).optional().describe('How aggressively fan, air-conditioning and room noise is removed.'),
+  "leveling": zod.enum(['off', 'gentle', 'strong']).optional().describe('Evens out quiet and loud speakers before the volume is raised.'),
+  "loudnessTarget": zod.enum(['standard', 'louder', 'softer']).optional().describe('Final listening level (standard -16 LUFS, louder -14 LUFS, softer -19 LUFS).'),
+  "humRemoval": zod.enum(['off', '50', '60']).optional().describe('Removes electrical hum at 50 Hz or 60 Hz and its harmonics.'),
+  "rumbleFilter": zod.boolean().optional().describe('Removes low rumble below 80 Hz (fans, HVAC, stage thumps).')
 })
 
 export const CreateAudioJobResponse = zod.object({
   "id": zod.string(),
   "status": zod.enum(['queued', 'decoding', 'denoising', 'normalizing', 'encoding', 'completed', 'failed']),
+  "progress": zod.number().int().describe('Overall processing progress from 0 to 100.'),
   "message": zod.string(),
   "originalName": zod.string(),
   "originalFormat": zod.string(),
   "outputFormat": zod.string(),
+  "settings": zod.object({
+  "outputFormat": zod.string(),
+  "noiseReduction": zod.string(),
+  "leveling": zod.string(),
+  "loudnessTarget": zod.string(),
+  "humRemoval": zod.string(),
+  "rumbleFilter": zod.boolean(),
+  "targetLufs": zod.number()
+}),
   "durationSeconds": zod.number().nullable(),
   "inputLufs": zod.number().nullable(),
   "outputLufs": zod.number().nullable(),
@@ -64,10 +80,20 @@ export const GetAudioJobParams = zod.object({
 export const GetAudioJobResponse = zod.object({
   "id": zod.string(),
   "status": zod.enum(['queued', 'decoding', 'denoising', 'normalizing', 'encoding', 'completed', 'failed']),
+  "progress": zod.number().int().describe('Overall processing progress from 0 to 100.'),
   "message": zod.string(),
   "originalName": zod.string(),
   "originalFormat": zod.string(),
   "outputFormat": zod.string(),
+  "settings": zod.object({
+  "outputFormat": zod.string(),
+  "noiseReduction": zod.string(),
+  "leveling": zod.string(),
+  "loudnessTarget": zod.string(),
+  "humRemoval": zod.string(),
+  "rumbleFilter": zod.boolean(),
+  "targetLufs": zod.number()
+}),
   "durationSeconds": zod.number().nullable(),
   "inputLufs": zod.number().nullable(),
   "outputLufs": zod.number().nullable(),

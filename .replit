@@ -21,4 +21,4 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
-packages = ["libsndfile", "libxcrypt", "pkg-config", "xsimd"]
+packages = ["ffmpeg", "libsndfile", "libxcrypt", "pkg-config", "xsimd"]

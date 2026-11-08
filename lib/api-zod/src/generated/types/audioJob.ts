@@ -5,15 +5,19 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AudioJobSettings } from './audioJobSettings';
 import type { AudioJobStatus } from './audioJobStatus';
 
 export interface AudioJob {
   id: string;
   status: AudioJobStatus;
+  /** Overall processing progress from 0 to 100. */
+  progress: number;
   message: string;
   originalName: string;
   originalFormat: string;
   outputFormat: string;
+  settings: AudioJobSettings;
   /** @nullable */
   durationSeconds: number | null;
   /** @nullable */

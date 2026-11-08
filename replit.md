@@ -1,6 +1,6 @@
-# [Project name]
+# ClearTake
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Cleans church recordings (sermons, services, Bible studies) for public sharing: removes fan, air-con, hum and room noise, lifts low or uneven volume, and exports MP3/WAV.
 
 ## Run & Operate
 
@@ -22,15 +22,24 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/api-server/audio_service/main.py` — Python/FastAPI audio engine (all DSP lives here)
+- `artifacts/api-server/src/` — Express server; spawns the Python service and proxies `/api/audio/*` to it
+- `artifacts/audio-cleaner/src/pages/audio-cleaner.tsx` — the single-page UI
+- `lib/api-spec/openapi.yaml` — API contract; run codegen after editing
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Pipeline: FFmpeg decode (+ ebur128 input meter, 80 Hz high-pass, optional 50/60 Hz notch) → DeepFilterNet denoise → optional leveling (acompressor / dynaudnorm) → two-pass EBU R128 `loudnorm` (TP −1.5 dBTP) → encode.
+- Everything streams from disk (RF64 intermediates) so 3-hour recordings don't need to fit in RAM.
+- Processing is mono: speech-focused, halves DeepFilterNet CPU time, avoids stereo phase artifacts.
+- Near-silent input (< −60 LUFS) is not boosted, to avoid amplifying noise.
+- Jobs live in memory + temp dir; a restart loses them. Single worker thread, so jobs run one at a time.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Upload MP3/WAV/M4A/AAC/FLAC/OGG/OPUS/WMA/AIFF/MP4/MOV/WEBM, up to 1 GB / 3 h (env: `AUDIO_MAX_UPLOAD_MB`, `AUDIO_MAX_DURATION_SECONDS`)
+- Settings: noise removal (light/standard/strong), volume boost (off/even out/strong), loudness (−19/−16/−14 LUFS), hum removal (off/50/60 Hz), rumble filter
+- Live progress, A/B playback, before/after loudness readout, download
 
 ## User preferences
 
@@ -38,7 +47,8 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Requires `ffmpeg`/`ffprobe` on PATH (in `.replit` nix packages). The engine reports "unavailable" without them.
+- `dfnstream-py` only ships Linux/macOS binaries; DeepFilterNet cannot run on Windows.
 
 ## Pointers
 

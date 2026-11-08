@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent, DragEvent, RefObject } from 'react';
+import type { ChangeEvent, DragEvent, ReactNode, RefObject } from 'react';
 import {
   AudioJobInputOutputFormat,
   AudioJobStatus,
@@ -9,9 +9,18 @@ import {
   useGetAudioEngine,
   useGetAudioJob,
 } from '@workspace/api-client-react';
-import type { AudioJob } from '@workspace/api-client-react';
+import type {
+  AudioJob,
+  AudioJobInputHumRemoval,
+  AudioJobInputLeveling,
+  AudioJobInputLoudnessTarget,
+  AudioJobInputNoiseReduction,
+} from '@workspace/api-client-react';
 import {
   AudioLines,
+  Fan,
+  Volume2,
+  Zap,
   Check,
   ChevronDown,
   CircleAlert,
@@ -31,10 +40,50 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 
 type OutputFormat = 'wav' | 'mp3';
-type WorkFile = { file: File; duration: number };
+type WorkFile = { file: File; duration: number | null };
+type CleanSettings = {
+  noiseReduction: AudioJobInputNoiseReduction;
+  leveling: AudioJobInputLeveling;
+  loudnessTarget: AudioJobInputLoudnessTarget;
+  humRemoval: AudioJobInputHumRemoval;
+  rumbleFilter: boolean;
+};
 
 const terminalStatuses: AudioJobStatus[] = [AudioJobStatus.completed, AudioJobStatus.failed];
-const acceptedExtensions = ['wav', 'mp3'];
+const fallbackExtensions = ['wav', 'mp3', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'wma', 'aiff', 'aif', 'mp4', 'mov', 'webm'];
+const defaultSettings: CleanSettings = {
+  noiseReduction: 'standard',
+  leveling: 'gentle',
+  loudnessTarget: 'standard',
+  humRemoval: 'off',
+  rumbleFilter: true,
+};
+
+const noiseOptions = [
+  { value: 'light', label: 'Light', hint: 'Keeps the most room sound. Best for recordings that are already fairly clean.' },
+  { value: 'standard', label: 'Standard', hint: 'Removes fan and air-conditioning noise while keeping voices natural.' },
+  { value: 'strong', label: 'Strong', hint: 'Removes as much noise as possible. Use for loud fans or noisy rooms.' },
+] as const;
+const levelingOptions = [
+  { value: 'off', label: 'Off', hint: 'Only the overall volume is adjusted.' },
+  { value: 'gentle', label: 'Even out', hint: 'Softens the gap between quiet and loud moments. Good for most sermons.' },
+  { value: 'strong', label: 'Strong boost', hint: 'Lifts quiet speakers and people far from the mic. Best for very low or uneven recordings.' },
+] as const;
+const loudnessOptions = [
+  { value: 'softer', label: 'Softer', hint: '−19 LUFS. Gentler level, often used for mono speech.' },
+  { value: 'standard', label: 'Standard', hint: '−16 LUFS. Recommended for podcasts, websites and church apps.' },
+  { value: 'louder', label: 'Louder', hint: '−14 LUFS. Matches YouTube and Spotify loudness.' },
+] as const;
+const humOptions = [
+  { value: 'off', label: 'Off', hint: 'No hum filter.' },
+  { value: '60', label: '60 Hz', hint: 'For electrical buzz in the Americas and parts of Asia.' },
+  { value: '50', label: '50 Hz', hint: 'For electrical buzz in Europe, Africa, the UK, Australia and most of Asia.' },
+] as const;
+
+const settingLabels: Record<string, string> = {
+  light: 'Light', standard: 'Standard', strong: 'Strong', off: 'Off', gentle: 'Even out',
+  louder: 'Louder', softer: 'Softer', '50': '50 Hz', '60': '60 Hz',
+};
 
 function readableBytes(bytes: number) {
   if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
@@ -66,21 +115,23 @@ function errorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+// Browsers cannot read every format (e.g. WMA, some MOV files). When they can't, the server checks the file instead.
 function inspectDuration(file: File) {
-  return new Promise<number>((resolve, reject) => {
+  return new Promise<number | null>((resolve) => {
     const url = URL.createObjectURL(file);
     const audio = new Audio();
+    const finish = (value: number | null) => {
+      window.clearTimeout(timer);
+      URL.revokeObjectURL(url);
+      resolve(value);
+    };
+    const timer = window.setTimeout(() => finish(null), 8000);
     audio.preload = 'metadata';
     audio.onloadedmetadata = () => {
       const duration = audio.duration;
-      URL.revokeObjectURL(url);
-      if (Number.isFinite(duration) && duration > 0) resolve(duration);
-      else reject(new Error('The recording duration could not be read. Try exporting it as WAV or MP3.'));
+      finish(Number.isFinite(duration) && duration > 0 ? duration : null);
     };
-    audio.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('This audio file could not be opened in your browser. Try WAV or MP3.'));
-    };
+    audio.onerror = () => finish(null);
     audio.src = url;
   });
 }
@@ -102,7 +153,11 @@ export default function AudioCleaner() {
   const queryClient = useQueryClient();
   const { data: engine, isLoading: engineLoading, isError: engineError, error: engineFailure, refetch: retryEngine } = useGetAudioEngine();
   const [file, setFile] = useState<WorkFile | null>(null);
-  const [outputFormat, setOutputFormat] = useState<OutputFormat>('wav');
+  const [outputFormat, setOutputFormat] = useState<OutputFormat>('mp3');
+  const [settings, setSettings] = useState<CleanSettings>(defaultSettings);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const updateSetting = <K extends keyof CleanSettings>(key: K, value: CleanSettings[K]) =>
+    setSettings((current) => ({ ...current, [key]: value }));
   const [jobId, setJobId] = useState('');
   const [localError, setLocalError] = useState('');
   const [checkingFile, setCheckingFile] = useState(false);
@@ -148,6 +203,8 @@ export default function AudioCleaner() {
   const cleanedDownloadUrl = jobId ? `${cleanedUrl}/download` : '';
   const maxSize = engine?.maxUploadBytes ?? 0;
   const maxDuration = engine?.maxDurationSeconds ?? 0;
+  const acceptedExtensions = engine?.acceptedExtensions?.length ? engine.acceptedExtensions : fallbackExtensions;
+  const acceptAttribute = acceptedExtensions.map((extension) => `.${extension}`).join(',');
 
   async function setSelectedFile(candidate: File) {
     setLocalError('');
@@ -158,7 +215,7 @@ export default function AudioCleaner() {
     }
     const extension = candidate.name.split('.').pop()?.toLowerCase() ?? '';
     if (!acceptedExtensions.includes(extension)) {
-      setLocalError('Choose a WAV or MP3 recording. Other audio formats are not supported yet.');
+      setLocalError(`This file type is not supported. Choose ${acceptedExtensions.map((e) => e.toUpperCase()).join(', ')}.`);
       return;
     }
     if (maxSize > 0 && candidate.size > maxSize) {
@@ -168,7 +225,7 @@ export default function AudioCleaner() {
     setCheckingFile(true);
     try {
       const duration = await inspectDuration(candidate);
-      if (maxDuration > 0 && duration > maxDuration) {
+      if (duration != null && maxDuration > 0 && duration > maxDuration) {
         setLocalError(`This recording is ${timeLabel(duration)} long. The maximum is ${timeLabel(maxDuration)}.`);
         return;
       }
@@ -199,13 +256,19 @@ export default function AudioCleaner() {
       setLocalError(`This file is too large. Choose a recording under ${readableBytes(engine.maxUploadBytes)}.`);
       return;
     }
-    if (engine.maxDurationSeconds > 0 && file.duration > engine.maxDurationSeconds) {
+    if (file.duration != null && engine.maxDurationSeconds > 0 && file.duration > engine.maxDurationSeconds) {
       setLocalError(`This recording is ${timeLabel(file.duration)} long. The maximum is ${timeLabel(engine.maxDurationSeconds)}.`);
       return;
     }
     setLocalError('');
     createJob.mutate(
-      { data: { file: file.file, outputFormat: outputFormat === 'wav' ? AudioJobInputOutputFormat.wav : AudioJobInputOutputFormat.mp3 } },
+      {
+        data: {
+          file: file.file,
+          outputFormat: outputFormat === 'wav' ? AudioJobInputOutputFormat.wav : AudioJobInputOutputFormat.mp3,
+          ...settings,
+        },
+      },
       {
         onSuccess: (created) => {
           setJobId(created.id);
@@ -295,7 +358,7 @@ export default function AudioCleaner() {
                     ref={pickerRef}
                     className="visually-hidden"
                     type="file"
-                    accept="audio/wav,audio/x-wav,audio/mpeg,.wav,.mp3"
+                    accept={`audio/*,video/mp4,video/quicktime,video/webm,${acceptAttribute}`}
                     onChange={onFileChange}
                     disabled={engineUnavailable || busy}
                     data-testid="input-audio-file"
@@ -327,7 +390,78 @@ export default function AudioCleaner() {
                       <span className="upload-icon"><Upload size={22} /></span>
                       <strong>Drop your recording here</strong>
                       <span className="drop-hint">or <button className="browse-trigger" type="button" onClick={(event) => { event.stopPropagation(); pickerRef.current?.click(); }}>browse files</button> on your device</span>
-                      <span className="supported-note">WAV or MP3 · up to {readableBytes(maxSize)} · {timeLabel(maxDuration)} maximum</span>
+                      <span className="supported-note">MP3, WAV, M4A, FLAC, MP4 and more · up to {readableBytes(maxSize)} · {timeLabel(maxDuration)} maximum</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="settings-block" aria-label="Cleaning settings">
+                  <SegmentedSetting
+                    icon={<Fan size={15} />}
+                    title="Background noise removal"
+                    caption="Fans, air conditioning, hiss and room noise"
+                    options={noiseOptions}
+                    value={settings.noiseReduction}
+                    onChange={(value) => updateSetting('noiseReduction', value)}
+                    testId="noise"
+                  />
+                  <SegmentedSetting
+                    icon={<Volume2 size={15} />}
+                    title="Volume boost"
+                    caption="Raises low recordings and evens out quiet speakers"
+                    options={levelingOptions}
+                    value={settings.leveling}
+                    onChange={(value) => updateSetting('leveling', value)}
+                    testId="leveling"
+                  />
+
+                  <button
+                    type="button"
+                    className="advanced-toggle"
+                    aria-expanded={showAdvanced}
+                    onClick={() => setShowAdvanced((open) => !open)}
+                    data-testid="button-advanced"
+                  >
+                    <ChevronDown size={14} className={showAdvanced ? 'is-open' : ''} /> More options
+                    <span>hum, rumble, loudness</span>
+                  </button>
+
+                  {showAdvanced && (
+                    <div className="advanced-panel">
+                      <SegmentedSetting
+                        icon={<SlidersHorizontal size={15} />}
+                        title="Final loudness"
+                        caption="How loud the finished file plays"
+                        options={loudnessOptions}
+                        value={settings.loudnessTarget}
+                        onChange={(value) => updateSetting('loudnessTarget', value)}
+                        testId="loudness"
+                      />
+                      <SegmentedSetting
+                        icon={<Zap size={15} />}
+                        title="Electrical hum removal"
+                        caption="Removes buzz from the PA, lights or ground loops"
+                        options={humOptions}
+                        value={settings.humRemoval}
+                        onChange={(value) => updateSetting('humRemoval', value)}
+                        testId="hum"
+                      />
+                      <label className="setting-row toggle-row">
+                        <div className="format-label">
+                          <span className="format-icon"><AudioLines size={15} /></span>
+                          <div><strong>Remove low rumble</strong><small>Cuts deep fan and air-con rumble, stage thumps and mic handling below 80 Hz</small></div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          className="toggle-input"
+                          checked={settings.rumbleFilter}
+                          onChange={(event) => updateSetting('rumbleFilter', event.target.checked)}
+                          data-testid="toggle-rumble"
+                        />
+                      </label>
+                      <button type="button" className="text-button reset-settings" onClick={() => setSettings(defaultSettings)}>
+                        <RotateCcw size={12} /> Restore recommended settings
+                      </button>
                     </div>
                   )}
                 </div>
@@ -340,8 +474,8 @@ export default function AudioCleaner() {
                   <label className="select-wrap">
                     <span className="sr-only">Output format</span>
                     <select value={outputFormat} onChange={(event) => setOutputFormat(event.target.value as OutputFormat)} disabled={Boolean(jobId)}>
-                      <option value="wav">WAV · best quality</option>
-                      <option value="mp3">MP3 · smaller file</option>
+                      <option value="mp3">MP3 · for sharing online</option>
+                      <option value="wav">WAV · for further editing</option>
                     </select>
                     <ChevronDown className="select-chevron" size={15} />
                   </label>
@@ -392,7 +526,18 @@ export default function AudioCleaner() {
                   <>
                     <div className={`progress-message ${job.status === AudioJobStatus.failed ? 'is-failed' : canDownload ? 'is-done' : ''}`} role="status" aria-live="polite" data-testid="status-job">
                       <span className="progress-mark">{canDownload ? <Check size={15} /> : job.status === AudioJobStatus.failed ? <CircleAlert size={15} /> : <LoaderCircle className="spin" size={15} />}</span>
-                      <span><strong>{prettyStatus(job.status)}</strong><small>{statusText}</small></span>
+                      <span className="progress-copy">
+                        <strong>{prettyStatus(job.status)}{processing && job.progress > 0 ? ` · ${job.progress}%` : ''}</strong>
+                        <small>{statusText}</small>
+                        {processing && (
+                          <span className="progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={job.progress} aria-label="Cleaning progress">
+                            <span style={{ width: `${Math.max(2, job.progress)}%` }} />
+                          </span>
+                        )}
+                        {processing && (job.durationSeconds ?? 0) > 1200 && (
+                          <small>Long recordings can take several minutes. You can leave this page open and come back.</small>
+                        )}
+                      </span>
                     </div>
 
                     {job.status === AudioJobStatus.failed ? (
@@ -419,7 +564,7 @@ export default function AudioCleaner() {
                           <div className="compare-divider"><span>A / B</span></div>
                           <AudioCard
                             title="Cleaned"
-                            subtitle={canDownload ? 'Noise reduced · normalized' : 'Ready when processing finishes'}
+                            subtitle={canDownload ? 'Noise removed · volume balanced' : 'Ready when processing finishes'}
                             audioRef={cleanedAudioRef}
                             src={canDownload ? cleanedUrl : ''}
                             duration={job.durationSeconds ?? file?.duration ?? null}
@@ -432,10 +577,15 @@ export default function AudioCleaner() {
                         {canDownload && (
                           <div className="result-stats" aria-label="Audio levels">
                             <div><span>BEFORE</span><strong>{job.inputLufs == null ? '—' : `${job.inputLufs.toFixed(1)} LUFS`}</strong></div>
-                            <div><span>AFTER</span><strong>{job.outputLufs == null ? '—' : `${job.outputLufs.toFixed(1)} LUFS`} <small>/ −16 LUFS target</small></strong></div>
-                            <div><span>PEAK LEVEL</span><strong>{job.outputPeakDbfs == null ? '—' : `${job.outputPeakDbfs.toFixed(1)} dBFS`}</strong></div>
+                            <div><span>AFTER</span><strong>{job.outputLufs == null ? '—' : `${job.outputLufs.toFixed(1)} LUFS`} <small>/ {job.settings.targetLufs.toFixed(0).replace('-', '−')} LUFS target</small></strong></div>
+                            <div><span>PEAK LEVEL</span><strong>{job.outputPeakDbfs == null ? '—' : `${job.outputPeakDbfs.toFixed(1)} dBTP`}</strong></div>
                           </div>
                         )}
+                        <p className="settings-summary" data-testid="text-settings-summary">
+                          Noise removal: {settingLabels[job.settings.noiseReduction]} · Volume boost: {settingLabels[job.settings.leveling]} · Loudness: {settingLabels[job.settings.loudnessTarget]}
+                          {job.settings.humRemoval !== 'off' && <> · Hum: {settingLabels[job.settings.humRemoval]}</>}
+                          {job.settings.rumbleFilter && <> · Rumble filter on</>}
+                        </p>
                         <div className="result-actions">
                           <a
                             className={`primary-button download-button ${canDownload ? '' : 'is-disabled'}`}
@@ -462,7 +612,7 @@ export default function AudioCleaner() {
               <div className="side-icon"><Headphones size={19} /></div>
               <span className="side-kicker">MADE FOR THE HUMAN VOICE</span>
               <h3>Less noise.<br />More you.</h3>
-              <p>No knobs to learn. ClearTake gently cleans your recording and brings it to a comfortable listening level.</p>
+              <p>Made for sermons, Bible studies and services. ClearTake removes fan and room noise, lifts quiet voices and brings everything to a comfortable listening level.</p>
             </div>
             <div className="side-divider" />
             <div className="process-list">
@@ -489,6 +639,52 @@ export default function AudioCleaner() {
         </footer>
       </div>
     </main>
+  );
+}
+
+function SegmentedSetting<T extends string>({
+  icon,
+  title,
+  caption,
+  options,
+  value,
+  onChange,
+  testId,
+}: {
+  icon: ReactNode;
+  title: string;
+  caption: string;
+  options: readonly { value: T; label: string; hint: string }[];
+  value: T;
+  onChange: (value: T) => void;
+  testId: string;
+}) {
+  const selected = options.find((option) => option.value === value);
+  return (
+    <div className="setting-row">
+      <div className="format-label">
+        <span className="format-icon">{icon}</span>
+        <div><strong>{title}</strong><small>{caption}</small></div>
+      </div>
+      <div className="setting-control">
+        <div className="segmented" role="radiogroup" aria-label={title}>
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={option.value === value}
+              className={option.value === value ? 'is-selected' : ''}
+              onClick={() => onChange(option.value)}
+              data-testid={`option-${testId}-${option.value}`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        {selected && <small className="setting-hint">{selected.hint}</small>}
+      </div>
+    </div>
   );
 }
 

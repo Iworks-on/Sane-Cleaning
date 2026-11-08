@@ -14,4 +14,5 @@ export interface AudioEngineStatus {
   loudnessNormalization: string;
   maxUploadBytes: number;
   maxDurationSeconds: number;
+  acceptedExtensions: string[];
 }

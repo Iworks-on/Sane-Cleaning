@@ -24,6 +24,7 @@ export interface AudioEngineStatus {
   loudnessNormalization: string;
   maxUploadBytes: number;
   maxDurationSeconds: number;
+  acceptedExtensions: string[];
 }
 
 export type AudioJobInputOutputFormat = typeof AudioJobInputOutputFormat[keyof typeof AudioJobInputOutputFormat];
@@ -34,9 +35,77 @@ export const AudioJobInputOutputFormat = {
   mp3: 'mp3',
 } as const;
 
+/**
+ * How aggressively fan, air-conditioning and room noise is removed.
+ */
+export type AudioJobInputNoiseReduction = typeof AudioJobInputNoiseReduction[keyof typeof AudioJobInputNoiseReduction];
+
+
+export const AudioJobInputNoiseReduction = {
+  light: 'light',
+  standard: 'standard',
+  strong: 'strong',
+} as const;
+
+/**
+ * Evens out quiet and loud speakers before the volume is raised.
+ */
+export type AudioJobInputLeveling = typeof AudioJobInputLeveling[keyof typeof AudioJobInputLeveling];
+
+
+export const AudioJobInputLeveling = {
+  off: 'off',
+  gentle: 'gentle',
+  strong: 'strong',
+} as const;
+
+/**
+ * Final listening level (standard -16 LUFS, louder -14 LUFS, softer -19 LUFS).
+ */
+export type AudioJobInputLoudnessTarget = typeof AudioJobInputLoudnessTarget[keyof typeof AudioJobInputLoudnessTarget];
+
+
+export const AudioJobInputLoudnessTarget = {
+  standard: 'standard',
+  louder: 'louder',
+  softer: 'softer',
+} as const;
+
+/**
+ * Removes electrical hum at 50 Hz or 60 Hz and its harmonics.
+ */
+export type AudioJobInputHumRemoval = typeof AudioJobInputHumRemoval[keyof typeof AudioJobInputHumRemoval];
+
+
+export const AudioJobInputHumRemoval = {
+  off: 'off',
+  NUMBER_50: '50',
+  NUMBER_60: '60',
+} as const;
+
 export interface AudioJobInput {
   file: Blob;
   outputFormat: AudioJobInputOutputFormat;
+  /** How aggressively fan, air-conditioning and room noise is removed. */
+  noiseReduction?: AudioJobInputNoiseReduction;
+  /** Evens out quiet and loud speakers before the volume is raised. */
+  leveling?: AudioJobInputLeveling;
+  /** Final listening level (standard -16 LUFS, louder -14 LUFS, softer -19 LUFS). */
+  loudnessTarget?: AudioJobInputLoudnessTarget;
+  /** Removes electrical hum at 50 Hz or 60 Hz and its harmonics. */
+  humRemoval?: AudioJobInputHumRemoval;
+  /** Removes low rumble below 80 Hz (fans, HVAC, stage thumps). */
+  rumbleFilter?: boolean;
+}
+
+export interface AudioJobSettings {
+  outputFormat: string;
+  noiseReduction: string;
+  leveling: string;
+  loudnessTarget: string;
+  humRemoval: string;
+  rumbleFilter: boolean;
+  targetLufs: number;
 }
 
 export type AudioJobStatus = typeof AudioJobStatus[keyof typeof AudioJobStatus];
@@ -55,10 +124,13 @@ export const AudioJobStatus = {
 export interface AudioJob {
   id: string;
   status: AudioJobStatus;
+  /** Overall processing progress from 0 to 100. */
+  progress: number;
   message: string;
   originalName: string;
   originalFormat: string;
   outputFormat: string;
+  settings: AudioJobSettings;
   /** @nullable */
   durationSeconds: number | null;
   /** @nullable */

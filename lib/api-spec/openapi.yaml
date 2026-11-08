@@ -110,7 +110,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Original WAV or MP3 audio
+          description: Original uploaded audio
           content:
             audio/wav:
               schema:
@@ -201,7 +201,11 @@ components:
           type: integer
         maxDurationSeconds:
           type: integer
-      required: [status, message, noiseReduction, loudnessNormalization, maxUploadBytes, maxDurationSeconds]
+        acceptedExtensions:
+          type: array
+          items:
+            type: string
+      required: [status, message, noiseReduction, loudnessNormalization, maxUploadBytes, maxDurationSeconds, acceptedExtensions]
     AudioJobInput:
       type: object
       properties:
@@ -211,7 +215,44 @@ components:
         outputFormat:
           type: string
           enum: [wav, mp3]
+        noiseReduction:
+          type: string
+          enum: [light, standard, strong]
+          description: How aggressively fan, air-conditioning and room noise is removed.
+        leveling:
+          type: string
+          enum: ["off", gentle, strong]
+          description: Evens out quiet and loud speakers before the volume is raised.
+        loudnessTarget:
+          type: string
+          enum: [standard, louder, softer]
+          description: Final listening level (standard -16 LUFS, louder -14 LUFS, softer -19 LUFS).
+        humRemoval:
+          type: string
+          enum: ["off", "50", "60"]
+          description: Removes electrical hum at 50 Hz or 60 Hz and its harmonics.
+        rumbleFilter:
+          type: boolean
+          description: Removes low rumble below 80 Hz (fans, HVAC, stage thumps).
       required: [file, outputFormat]
+    AudioJobSettings:
+      type: object
+      properties:
+        outputFormat:
+          type: string
+        noiseReduction:
+          type: string
+        leveling:
+          type: string
+        loudnessTarget:
+          type: string
+        humRemoval:
+          type: string
+        rumbleFilter:
+          type: boolean
+        targetLufs:
+          type: number
+      required: [outputFormat, noiseReduction, leveling, loudnessTarget, humRemoval, rumbleFilter, targetLufs]
     AudioJob:
       type: object
       properties:
@@ -220,6 +261,9 @@ components:
         status:
           type: string
           enum: [queued, decoding, denoising, normalizing, encoding, completed, failed]
+        progress:
+          type: integer
+          description: Overall processing progress from 0 to 100.
         message:
           type: string
         originalName:
@@ -228,6 +272,8 @@ components:
           type: string
         outputFormat:
           type: string
+        settings:
+          $ref: "#/components/schemas/AudioJobSettings"
         durationSeconds:
           type: ["number", "null"]
         inputLufs:
@@ -241,5 +287,5 @@ components:
         createdAt:
           type: string
           format: date-time
-      required: [id, status, message, originalName, originalFormat, outputFormat, durationSeconds, inputLufs, outputLufs, outputPeakDbfs, error, createdAt]
+      required: [id, status, progress, message, originalName, originalFormat, outputFormat, settings, durationSeconds, inputLufs, outputLufs, outputPeakDbfs, error, createdAt]
 
